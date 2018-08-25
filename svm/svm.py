@@ -1,4 +1,5 @@
 import math
+import numpy as np
 
 import sklearn.base
 import sklearn.multiclass
@@ -28,6 +29,7 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
         self.error = math.inf
     
     def train_iters(self):
+        iteration = 0
         while iteration < self.max_iter and self.error > self.epsilon:
             iteration += 1
             yield iteration
@@ -38,15 +40,10 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
 
     def score(self, X, y, sample_weight=None):
         pass
-
-    def get_params(self, deep=True):
-        pass
-
-    def set_params(self, **params):
-        pass
     
     def fit(self, X, y, sample_weight=None):
-        for 
+        for iteration in self.train_iters():
+            pass
 
     def predict(self, X):
         return np.sign(np.dot(self.w.T, X.T) + self.b).astype(int) 
