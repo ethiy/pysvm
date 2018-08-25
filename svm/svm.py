@@ -36,6 +36,7 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
         self.w = np.zeros(n)
         self.b = 0
         self.error = math.inf
+        self.support_vectors = []
     
     def train_iters(self):
         iteration = 0
@@ -43,7 +44,7 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
             iteration += 1
             yield iteration
 
-    def compute_separator(self, X, y, sample_weight=None):
+    def update_separator(self, X, y, sample_weight=None):
         self.w = np.dot(self.alpha * y, X)
         self.b = np.mean(y - np.dot(w.T, X.T))
 
@@ -59,6 +60,9 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
             self.alpha[j] += delta
             self.alpha[i] += - y[j] * y[i] * delta
             self.clip(j, self.bounds(i, j))
+            self.update_separator(X, y)
+            
+
 
     def update(self, i, X, y):
         self.update_couple(
@@ -72,10 +76,23 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
         self.n, self.d = X.shape
         self.K = np.full((n, n), np.nan)
         for iteration in self.train_iters():
+            prev_alpha = np.copy(self.alpha)
             map(
                 lambda i: self.update(i, X, y),
                 range(0, self.n)
             )
+            self.error = np.linalg.norm(self.alpha - prev_alpha)
+        self.compute_support()
+        return self
+
+    def compute_support(self):
+        self.support_vectors = np.vstack(
+            [
+                X[idx, :]
+                for (idx, a) in alpha
+                if a > 0
+            ]
+        )
     
     def distance(self, X):
         return np.dot(self.w.T, X.T) + self.b
