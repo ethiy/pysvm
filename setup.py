@@ -2,7 +2,7 @@
 # -*- coding: <utf-8> -*-
 
 from setuptools import setup, find_packages
-from qualcity import config
+from svm import __version__
 
 def readme():
     """
@@ -22,7 +22,7 @@ def requirements():
 
 setup(
     name='pysvm',
-    version=config.__version__,
+    version=__version__,
     description='Python SVM SMO',
     long_description=readme(),
     classifiers=[
@@ -40,7 +40,6 @@ setup(
         'Operating System :: Unix',
         'Operating System :: Windows'
     ],
-    scripts=['qual-city'],
     keywords='Machine Learning SVM SMO',
     url='https://github.com/ethiy/pysvm',
     author='Oussama Ennafii',
