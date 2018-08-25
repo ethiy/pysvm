@@ -48,6 +48,9 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
     def predict(self, X):
         return np.sign(np.dot(self.w.T, X.T) + self.b).astype(int) 
     
+    def prediction_error(self, x, y):
+        return self.predict(x) - y
+    
 
 def OnevsAllSVM(max_iter=math.inf, kernel=lambda x, y: x.T.dot(y), C=1.0, epsilon=0):
     return sklearn.multiclass.OneVsRestClassifier(BinarySVM(max_iter, kernel, C, epsilon))
