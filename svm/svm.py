@@ -28,7 +28,7 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
         alpha : 
     """
 
-    def __init__(self, max_iter=math.inf, kernel=lambda x, y: x.T.dot(y), C=1.0, epsilon=0, debug=False, verbose=False):
+    def __init__(self, max_iter=math.inf, kernel=lambda x, y: x.dot(y), C=1.0, epsilon=0, debug=False, verbose=False):
         self.max_iter = max_iter
         self.kernel = kernel
         self.C = C
@@ -97,6 +97,8 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
                 i, j = random_couple(0, self.n)
                 self.update_couple(i, j, X, y)
             self.error = np.linalg.norm(self.alpha - prev_alpha)
+            if visit_all:
+                self.error = self.error / self.n
             if self.debug:
                 self.errors.append(self.error)
             if self.verbose:
