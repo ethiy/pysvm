@@ -8,7 +8,7 @@ import sklearn.multiclass
 
 def random_int_except(m, M, ex):
     return random.choice(
-        [n for n in range(m, M+1) if n not in ex]
+        [n for n in range(m, M) if n not in ex]
     )
 
 
@@ -31,14 +31,19 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
         self.epsilon = epsilon
 
         self.n, self.d = (0, 0)
-        self.K = np.zeros((n, n))
-        self.alpha = np.zeros(n)
-        self.w = np.zeros(n)
-        self.b = 0
+        self.initialize()
+
         self.error = math.inf
         self.support_vectors = []
+
+    def initialize(self):
+        self.K = np.full((self.n, self.n), np.nan)
+        self.eta = dict()
+        self.alpha = np.zeros(self.n)
+        self.w = np.zeros(self.d)
+        self.b = 0
     
-    def train_iters(self):
+    def train_iterations(self):
         iteration = 0
         while iteration < self.max_iter and self.error > self.epsilon:
             iteration += 1
@@ -46,53 +51,57 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
 
     def update_separator(self, X, y, sample_weight=None):
         self.w = np.dot(self.alpha * y, X)
-        self.b = np.mean(y - np.dot(w.T, X.T))
+        self.b = np.mean(y - np.dot(self.w.T, X.T))
 
     def score(self, X, y, sample_weight=None):
         pass
     
     def update_couple(self, i, j, X, y):
-        self.eta(i, j, X, y)
-        if self.K[(i, j)] == 0:
+        self.compute_eta(i, j, X, y)
+        if self.eta[(min(i, j), max(i, j))] == 0:
             pass
         else:
             delta = self.delta(X, y, i, j)
+            L, H = self.bounds(i, j, y)
+            a_j_old = self.alpha[j]
             self.alpha[j] += delta
-            self.alpha[i] += - y[j] * y[i] * delta
-            self.clip(j, self.bounds(i, j))
+            self.clip(j, (L, H))
+            self.alpha[i] += - y[j] * y[i] * (self.alpha[j] - a_j_old)
             self.update_separator(X, y)
-            
-
-
-    def update(self, i, X, y):
-        self.update_couple(
-            i,
-            random_int_except(0, self.n, i),
-            X,
-            y
-        )
 
     def fit(self, X, y, sample_weight=None):
         self.n, self.d = X.shape
-        self.K = np.full((n, n), np.nan)
-        for iteration in self.train_iters():
+        self.initialize()
+        self.compute_diagonal(X)
+        for iteration in self.train_iterations():
+            print(iteration, self.error)
             prev_alpha = np.copy(self.alpha)
-            map(
-                lambda i: self.update(i, X, y),
-                range(0, self.n)
-            )
+            for i in range(self.n):
+                self.update_couple(
+                    i,
+                    random_int_except(0, self.n, [i]),
+                    X,
+                    y
+                )
             self.error = np.linalg.norm(self.alpha - prev_alpha)
         self.compute_support()
         return self
+    
+    def compute_diagonal(self, X):
+        for i in range(self.n):
+            self.K[i, i] = self.kernel(X[i, :], X[i, :])
 
     def compute_support(self):
-        self.support_vectors = np.vstack(
-            [
-                X[idx, :]
-                for (idx, a) in alpha
-                if a > 0
-            ]
-        )
+        pass
+        # supports = [
+        #     X[idx, :]
+        #     for (idx, a) in self.alpha
+        #     if a > 0
+        # ]
+        # print(self.alpha)
+        # self.support_vectors = np.vstack(
+        #     supports if len(supports) > 0 else np.zeros()
+        # )
     
     def distance(self, X):
         return np.dot(self.w.T, X.T) + self.b
@@ -103,16 +112,20 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
     def E(self, x, y):
         return self.distance(x) - y
     
-    def eta(self, i, j, X, y):
-        self.K[(i, j)] = 2 * self.kernel(X[i, :], X[j, :]) - self.kernel(X[i, :], X[i, :]) - self.kernel(X[j, :], X[j, :])
+    def compute_eta(self, i, j, X, y):
+        if (min(i, j), max(i, j)) not in self.eta.keys():
+            if np.isnan(self.K[i,j]):
+                self.K[i, j] = self.kernel(X[i, :], X[j, :])
+                self.K[j, i] = self.K[i, j]
+            self.eta[(min(i, j), max(i, j))] = 2 * self.K[i, j] - self.K[i, i] - self.K[j, j]
 
     def delta(self, X, y, i, j):
-        return float(y[j] * (self.E(X[j, :], y[j]) - self.E(X[i, :], y[i]))) / self.K[(i, j)]
+        return float(y[j] * (self.E(X[j, :], y[j]) - self.E(X[i, :], y[i]))) / self.eta[(min(i, j), max(i, j))]
     
-    def bounds(self, i, j):
+    def bounds(self, i, j, y):
         return (
             max(0, self.alpha[j] - (y[i] == y[j]) * self.C + y[i] * y[j] * self.alpha[i]),
-            min(C, self.alpha[j] + (y[i] != y[j]) * self.C + y[i] * y[j] * self.alpha[i])
+            min(self.C, self.alpha[j] + (y[i] != y[j]) * self.C + y[i] * y[j] * self.alpha[i])
         )
 
     def clip(self, i, bounds):
