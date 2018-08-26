@@ -42,7 +42,7 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
     def initialize(self):
         self.K = np.full((self.n, self.n), np.nan)
         self.eta = dict()
-        self.alpha = np.zeros(self.n)
+        self.alpha = np.random.randn(self.n)
         self.w = np.zeros(self.d)
         self.b = 0
     
