@@ -55,19 +55,22 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
 
     def score(self, X, y, sample_weight=None):
         pass
-    
+
+    def update_a_j(self, i, j, X, y):
+        L, H = self.bounds(i, j, y)
+        a_j_old = self.alpha[j]
+        dd = self.decision_discrepancy(X, y, i, j)
+        if self.eta[(min(i, j), max(i, j))] == 0:
+            self.alpha[j] = L if dd * L < dd * H else H
+        else:
+            self.alpha[j] += self.delta(dd, i, j)
+            self.clip(j, (L, H))
+        return self.alpha[j] - a_j_old
+
     def update_couple(self, i, j, X, y):
         self.compute_eta(i, j, X, y)
-        if self.eta[(min(i, j), max(i, j))] == 0:
-            pass
-        else:
-            delta = self.delta(X, y, i, j)
-            L, H = self.bounds(i, j, y)
-            a_j_old = self.alpha[j]
-            self.alpha[j] += delta
-            self.clip(j, (L, H))
-            self.alpha[i] += - y[j] * y[i] * (self.alpha[j] - a_j_old)
-            self.update_separator(X, y)
+        self.alpha[i] += - y[j] * y[i] * self.update_a_j(i, j, X, y)
+        self.update_separator(X, y)
 
     def fit(self, X, y, sample_weight=None):
         self.n, self.d = X.shape
@@ -84,24 +87,21 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
                     y
                 )
             self.error = np.linalg.norm(self.alpha - prev_alpha)
-        self.compute_support()
+        self.compute_support(X)
         return self
     
     def compute_diagonal(self, X):
         for i in range(self.n):
             self.K[i, i] = self.kernel(X[i, :], X[i, :])
 
-    def compute_support(self):
-        pass
-        # supports = [
-        #     X[idx, :]
-        #     for (idx, a) in self.alpha
-        #     if a > 0
-        # ]
-        # print(self.alpha)
-        # self.support_vectors = np.vstack(
-        #     supports if len(supports) > 0 else np.zeros()
-        # )
+    def compute_support(self, X):
+        self.support_vectors = np.vstack(
+            [
+                X[idx, :]
+                for (idx, a) in enumerate(self.alpha)
+                if a > 0
+            ]
+        )
     
     def distance(self, X):
         return np.dot(self.w.T, X.T) + self.b
@@ -118,9 +118,12 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
                 self.K[i, j] = self.kernel(X[i, :], X[j, :])
                 self.K[j, i] = self.K[i, j]
             self.eta[(min(i, j), max(i, j))] = 2 * self.K[i, j] - self.K[i, i] - self.K[j, j]
+    
+    def decision_discrepancy(self, X, y, i, j):
+        return float(y[j] * (self.E(X[j, :], y[j]) - self.E(X[i, :], y[i])))
 
-    def delta(self, X, y, i, j):
-        return float(y[j] * (self.E(X[j, :], y[j]) - self.E(X[i, :], y[i]))) / self.eta[(min(i, j), max(i, j))]
+    def delta(self, dd, i, j):
+        return dd / self.eta[(min(i, j), max(i, j))]
     
     def bounds(self, i, j, y):
         return (
