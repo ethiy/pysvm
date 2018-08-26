@@ -12,6 +12,10 @@ def random_int_except(m, M, ex):
     )
 
 
+def random_couple(m, M):
+    return random.sample(range(m, M), k=2)
+
+
 class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
     """
         SVM implemented using SMO.
@@ -75,19 +79,23 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
         self.alpha[i] += - y[j] * y[i] * self.update_a_j(i, j, X, y)
         self.update_separator(X, y)
 
-    def fit(self, X, y, sample_weight=None):
+    def fit(self, X, y, sample_weight=None, visit_all=True):
         self.n, self.d = X.shape
         self.initialize()
         self.compute_diagonal(X)
         for iteration in self.train_iterations():
             prev_alpha = np.copy(self.alpha)
-            for i in range(self.n):
-                self.update_couple(
-                    i,
-                    random_int_except(0, self.n, [i]),
-                    X,
-                    y
-                )
+            if visit_all:
+                for i in range(self.n):
+                    self.update_couple(
+                        i,
+                        random_int_except(0, self.n, [i]),
+                        X,
+                        y
+                    )
+            else:
+                i, j = random_couple(0, self.n)
+                self.update_couple(i, j, X, y)
             self.error = np.linalg.norm(self.alpha - prev_alpha)
             if self.debug:
                 self.errors.append(self.error)
