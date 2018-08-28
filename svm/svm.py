@@ -28,140 +28,169 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
         alpha : 
     """
 
-    def __init__(self, max_iter=math.inf, kernel=lambda x, y: x.dot(y), C=1.0, epsilon=0, debug=False, verbose=False):
+    def __init__(self, max_iter=math.inf, kernel=lambda x, y: x.dot(y.T), C=1.0, tolerance=0, debug=False, verbose=False, epsilon=1E-15):
         self.max_iter = max_iter
         self.kernel = kernel
         self.C = C
-        self.epsilon = epsilon
+        self.tolerance = tolerance
         self.debug = debug
         self.verbose = verbose
 
-        self.n, self.d = (0, 0)
         self.initialize()
+        self.b = 0
+        self.support_vectors_idx = []
+
+        self.updated = 0
+        self.visit_all = True
 
         self.error = math.inf
         self.errors = [self.error] if self.debug else None
-        self.support_vectors = np.zeros((0, self.d))
 
-    def initialize(self):
+    def initialize(self, X=[], Y=[]):
+        self.n = len(X)
+        self.X = X
+        self.Y = Y
+        self.alpha = np.zeros(self.n)
+
         self.K = np.full((self.n, self.n), np.nan)
+        self.Fs = np.full(self.n, np.nan)
         self.eta = dict()
-        self.alpha = np.random.randn(self.n)
-        self.w = np.random.randn(self.d)
-        self.b = np.random.randn(1)
+
+        self.compute_diagonal()
     
+    def compute_diagonal(self):
+        for i in range(self.n):
+            self.K[i, i] = self.kernel(self.X[i], self.X[i])
+
+    def is_continuing(self):
+        return bool(self.updated) or self.visit_all
+    
+    def is_lower_bound(self, i):
+        return math.isclose(self.alpha[i], O, np.finfo(float).eps)
+
+    def is_upper_bound(self, i):
+        return math.isclose(self.alpha[i], self.C, np.finfo(float).eps)
+
+    def is_bound(self, i):
+        return self.is_lower_bound(i) or self.is_upper_bound(i)
+
     def train_iterations(self):
         iteration = 0
-        while iteration < self.max_iter and self.error > self.epsilon:
+        while iteration < self.max_iter and (self.is_continuing()):
             iteration += 1
             yield iteration
+    
+    def F(self, x, y):
+        return self.phi(x) - y
+    
+    def compute_eta(self, i, j):
+        if (min(i, j), max(i, j)) not in self.eta.keys():
+            if np.isnan(self.K[i,j]):
+                self.K[i, j] = self.kernel(self.X[i], self.X[j])
+                self.K[j, i] = self.K[i, j]
+            self.eta[(min(i, j), max(i, j))] = 2 * self.K[i, j] - self.K[i, i] - self.K[j, j]
+    
+    def discrepancy(self, i, j):
+        return float(self.Y[j] * (self.F(self.X[j], self.Y[j]) - self.F(self.X[i], self.Y[i])))
 
-    def update_separator(self, X, y, sample_weight=None):
-        self.w = np.dot(self.alpha * y, X)
-        self.b = np.mean(y - np.dot(self.w.T, X.T))
+    def delta(self, dd, i, j):
+        return dd / self.eta[(min(i, j), max(i, j))]
+    
+    def alpha_bounds(self, i, j):
+        return (
+            max(0, self.alpha[j] - (self.Y[i] == self.Y[j]) * self.C + self.Y[i] * self.Y[j] * self.alpha[i]),
+            min(self.C, self.alpha[j] + (self.Y[i] != self.Y[j]) * self.C + self.Y[i] * self.Y[j] * self.alpha[i])
+        )
 
+    # def find_j(self):
+    #     j0 = random.choice(range(self.n))
+    #     j = j0
+    #     while j < self.n + j0 and self.j_stepped:
+    #         yield j%self.n
+    #         j += 1
+
+
+    # def update_b(self, sample_weight=None):
+    #     pass
+    
     def score(self, X, y, sample_weight=None):
-        pass
+        return 
 
-    def update_a_j(self, i, j, X, y):
-        L, H = self.bounds(i, j, y)
-        a_j_old = self.alpha[j]
-        dd = self.decision_discrepancy(X, y, i, j)
-        if self.eta[(min(i, j), max(i, j))] == 0:
-            self.alpha[j] = L if dd * L < dd * H else H
+    def update_a_j(self, i, j):
+        L, H = self.alpha_bounds(i, j)
+        if L == H:
+            return 0
         else:
-            self.alpha[j] += self.delta(dd, i, j)
-            self.clip(j, (L, H))
-        return self.alpha[j] - a_j_old
-
-    def update_couple(self, i, j, X, y):
-        self.compute_eta(i, j, X, y)
-        self.alpha[i] += - y[j] * y[i] * self.update_a_j(i, j, X, y)
-        self.update_separator(X, y)
-
-    def fit(self, X, y, sample_weight=None, visit_all=True):
-        self.n, self.d = X.shape
-        self.initialize()
-        self.compute_diagonal(X)
-        for iteration in self.train_iterations():
-            prev_alpha = np.copy(self.alpha)
-            if visit_all:
-                for i in range(self.n):
-                    self.update_couple(
-                        i,
-                        random_int_except(0, self.n, [i]),
-                        X,
-                        y
-                    )
+            a_j_old = self.alpha[j]
+            dd = self.discrepancy(i, j)
+            if self.eta[(min(i, j), max(i, j))] == 0:
+                self.alpha[j] = L if dd * L < dd * H else H
             else:
-                i, j = random_couple(0, self.n)
-                self.update_couple(i, j, X, y)
+                self.alpha[j] += self.delta(dd, i, j)
+                self.clip(j, (L, H))
+            return self.alpha[j] - a_j_old
+
+    def take_step(self, i, j):
+        if i != j:
+            self.compute_eta(i, j)
+            self.alpha[i] += - self.Y[j] * self.Y[i] * self.update_a_j(i, j)
+
+    def visit(self, i):
+
+
+    def fit(self, X, y, sample_weight=None):
+        self.initialize(X, y)
+        for iteration in self.train_iterations():
+            old_alpha = np.copy(self.alpha)
+            self.updated = 0
+
+            self.updated = sum(
+                [
+                    self.visit(i)
+                    for i in range(self.n)
+                    if self.visit_all or not self.is_bound(i)
+                ]
+            )
+            self.visit_all = not self.is_continuing()
+
             self.error = np.linalg.norm(self.alpha - prev_alpha)
-            if visit_all:
-                self.error = self.error / self.n
             if self.debug:
                 self.errors.append(self.error)
             if self.verbose:
                 print(
                     'Iteration:', iteration,
-                    '=> Error =' , self.error,
-                    ', Hyperplane: ', self.w / np.linalg.norm(self.w), self.b
+                    '=> Error =' , self.error
                 )
-        self.compute_support(X)
+        self.update_b()
         return self
     
-    def compute_diagonal(self, X):
-        for i in range(self.n):
-            self.K[i, i] = self.kernel(X[i, :], X[i, :])
+    def compute_support(self):
+        self.support_vectors_idx = [
+            i
+            for (i, a) in enumerate(self.alpha)
+            if a > 0 and a < self.C
+        ]
+    
+    def phi(self, x):
+        return np.sum(self.alpha * np.array(self.Y) * np.array([self.kernel(_x, x) for _x in self.X]))
 
-    def compute_support(self, X):
-        self.support_vectors = np.vstack(
-            [
-                X[idx, :]
-                for (idx, a) in enumerate(self.alpha)
-                if a > 0
-            ]
-        )
-    
-    def distance(self, X):
-        return np.dot(self.w.T, X.T) + self.b
-
-    def predict(self, X):
-        return np.sign(self.distance(X)).astype(int) 
-    
-    def E(self, x, y):
-        return self.distance(x) - y
-    
-    def compute_eta(self, i, j, X, y):
-        if (min(i, j), max(i, j)) not in self.eta.keys():
-            if np.isnan(self.K[i,j]):
-                self.K[i, j] = self.kernel(X[i, :], X[j, :])
-                self.K[j, i] = self.K[i, j]
-            self.eta[(min(i, j), max(i, j))] = 2 * self.K[i, j] - self.K[i, i] - self.K[j, j]
-    
-    def decision_discrepancy(self, X, y, i, j):
-        return float(y[j] * (self.E(X[j, :], y[j]) - self.E(X[i, :], y[i])))
-
-    def delta(self, dd, i, j):
-        return dd / self.eta[(min(i, j), max(i, j))]
-    
-    def bounds(self, i, j, y):
-        return (
-            max(0, self.alpha[j] - (y[i] == y[j]) * self.C + y[i] * y[j] * self.alpha[i]),
-            min(self.C, self.alpha[j] + (y[i] != y[j]) * self.C + y[i] * y[j] * self.alpha[i])
-        )
+    def predict(self, x):
+        return np.sign(self.phi(x) - self.b).astype(int) 
 
     def clip(self, i, bounds):
         self.alpha[i] = max(bounds[0], min(bounds[1], self.alpha[i]))
 
-
-def OnevsAllSVM(max_iter=math.inf, kernel=lambda x, y: x.T.dot(y), C=1.0, epsilon=0):
-    return sklearn.multiclass.OneVsRestClassifier(BinarySVM(max_iter, kernel, C, epsilon))
-
-
-def OnevsOneSVM(max_iter=math.inf, kernel=lambda x, y: x.T.dot(y), C=1.0, epsilon=0):
-    return sklearn.multiclass.OneVsOneClassifier(BinarySVM(max_iter, kernel, C, epsilon))
+    def w(self):
+        return np.dot(self.alpha * np.array(self.Y), np.vstack(self.X))
 
 
-def SVM(max_iter=math.inf, kernel=lambda x, y: x.T.dot(y), C=1.0, epsilon=0):
-    return OnevsAllSVM(max_iter, kernel, C, epsilon)
+def OnevsAllSVM(max_iter=math.inf, kernel=lambda x, y: x.T.dot(y), C=1.0, tolerance=0):
+    return sklearn.multiclass.OneVsRestClassifier(BinarySVM(max_iter, kernel, C, tolerance))
+
+
+def OnevsOneSVM(max_iter=math.inf, kernel=lambda x, y: x.T.dot(y), C=1.0, tolerance=0):
+    return sklearn.multiclass.OneVsOneClassifier(BinarySVM(max_iter, kernel, C, tolerance))
+
+
+def SVM(max_iter=math.inf, kernel=lambda x, y: x.T.dot(y), C=1.0, tolerance=0):
+    return OnevsAllSVM(max_iter, kernel, C, tolerance)
