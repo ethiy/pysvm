@@ -7,6 +7,8 @@ import random
 import sklearn.base
 import sklearn.multiclass
 
+import sklearn.preprocessing
+
 
 def random_int_except(m, M, ex):
     return random.choice(
@@ -16,6 +18,15 @@ def random_int_except(m, M, ex):
 
 def random_tuple(m, M, k=2):
     return random.sample(range(m, M), k)
+
+
+def multiclass_strategy(strategy):
+    if strategy == 'onevsone':
+        return lambda est: sklearn.multiclass.OneVsOneClassifier(est)
+    elif strategy == 'onevsall':
+        return lambda est: sklearn.multiclass.OneVsRestClassifier(est)
+    else:
+        raise NotImplemented('Unkown strategy!')
 
 
 class Bound(Enum):
@@ -365,13 +376,22 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
         ) / len(X)
 
 
-def OnevsAllSVM(max_iter=math.inf, kernel=lambda x, y: x.T.dot(y), C=1.0, tolerance=1E-3):
-    return sklearn.multiclass.OneVsRestClassifier(BinarySVM(max_iter, kernel, C, tolerance))
+class SVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
+    def __init__(self, max_iter=math.inf, kernel=lambda x, y: x.dot(y.T), C=1.0, tolerance=1E-3, debug=False, verbose=False, epsilon=np.finfo(float).eps, strategy = 'OnevsAll'):
+        self.estimator = multiclass_strategy(strategy)(
+            BinarySVM(max_iter, kernel, tolerance, debug, verbose, epsilon)
+        )
+        self.lb = sklearn.preprocessing.LabelBinarizer(neg_label=-1)
+    
+    def fit(self, X, Y):
+        self.estimator.fit(
+            X,
+            self.lb.fit_transform(Y)
+        )
+        return self
+    
+    def predict(self, x):
+        return self.lb.inverse_transform(self.estimator.predict(x))
 
-
-def OnevsOneSVM(max_iter=math.inf, kernel=lambda x, y: x.T.dot(y), C=1.0, tolerance=0):
-    return sklearn.multiclass.OneVsOneClassifier(BinarySVM(max_iter, kernel, C, tolerance))
-
-
-def SVM(max_iter=math.inf, kernel=lambda x, y: x.T.dot(y), C=1.0, tolerance=0):
-    return OnevsAllSVM(max_iter, kernel, C, tolerance)
+    def score(self, X, Y):
+        return self.estimator.score(X, Y)
