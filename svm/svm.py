@@ -330,7 +330,15 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
                     print(
                         '  Alpha update =' , self.alpha_updates[-1]
                     )
+                    self.update_b()
+                    print(
+                        '  Score = ', self.score()
+                    )
         self.update_b()
+        if self.verbose:
+            print(
+                '  Score = ', self.score()
+            )
         return self
     
     def compute_support(self):
@@ -340,14 +348,21 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
             if a > 0 and a < self.C
         ]
     
-    def predict(self, x):
-        return np.sign(self.phi(x) - self.b).astype(int) 
-
     def w(self):
         return np.dot(self.alpha * np.array(self.Y), np.vstack(self.X))
 
+    def predict(self, x):
+        return np.sign(self.phi(x) - self.b).astype(int) 
+    
+    def score(self, X=None, Y=None):
+        if X is None or Y is None:
+            X, Y = self.X, self.Y
+        return sum(
+            [self.predict(x) == y for (x, y) in zip(X, Y)]
+        ) / len(X)
 
-def OnevsAllSVM(max_iter=math.inf, kernel=lambda x, y: x.T.dot(y), C=1.0, tolerance=0):
+
+def OnevsAllSVM(max_iter=math.inf, kernel=lambda x, y: x.T.dot(y), C=1.0, tolerance=1E-3):
     return sklearn.multiclass.OneVsRestClassifier(BinarySVM(max_iter, kernel, C, tolerance))
 
 
