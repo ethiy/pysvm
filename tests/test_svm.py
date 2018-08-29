@@ -42,7 +42,6 @@ class BinaryTest(unittest.TestCase):
         X, y = sklearn.datasets.make_circles(n_samples=1000, factor=.3, noise=.05)
         model = BinarySVM(max_iter=100, C=100, kernel=lambda x, y: x.dot(y.T)**2)
         model.fit([np.array(x) for x in X], (2*y-1).tolist())
-        print(np.argwhere(np.isnan(model.K)).shape)
         self.assertLess(abs(model.b + 1.8), .1)
 
 def main():
