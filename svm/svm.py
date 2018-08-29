@@ -59,8 +59,7 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
         self.updated = 0
         self.visit_all = True
 
-        self.alpha_update = math.inf
-        self.alpha_updates = [self.alpha_update] if self.debug else None
+        self.alpha_updates = [math.inf] if self.debug else None
         self.lds = [0] if self.debug else None
 
     def initialize(self, X=[], Y=[]):
@@ -99,7 +98,7 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
     
     def train_iterations(self):
         iteration = 0
-        while iteration < self.max_iter and (self.is_continuing()):
+        while iteration < self.max_iter and self.is_continuing():
             iteration += 1
             yield iteration
     
@@ -261,14 +260,16 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
     def optimal(self):
         return self.b_up > self.b_low - 2 * self.tolerance
 
-    def inner_continuing(self):
-        return self.optimal() and bool(self.inner_loop_success)
+    def inner_stop(self):
+        return not (self.optimal() and bool(self.inner_loop_success))
     
     def violating_inner_iterations(self):
         v_iter = 0
-        while self.inner_continuing():
+        while 'Trying most violating saples i_up and i_low':
             v_iter += 1
             yield v_iter
+            if self.inner_stop():
+                break
     
     def most_violating_steps(self):
         for inner_iteration in self.violating_inner_iterations():
@@ -278,6 +279,9 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
                 print(
                     '    Inner iteration:', inner_iteration
                 )
+        if self.verbose:
+            print('  Updated couples: ', self.updated)
+        self.updated = 0
     
     def LD(self):
         a = np.reshape(self.alpha, (1, -1))
@@ -308,23 +312,24 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
                         for i in range(self.n)
                     ]
                 )
+                if self.verbose:
+                    print('  Updated couples: ', self.updated)
             else:
                 print('  Visiting most violating...')
                 self.most_violating_steps()
 
-            if self.verbose:
-                print('  Updated couples: ', self.updated)
             self.visit_all = not self.is_continuing()
 
-            self.alpha_update = np.linalg.norm(self.alpha - old_alpha)
             if self.debug:
-                self.alpha_updates.append(self.alpha_update)
+                self.alpha_updates.append(
+                    np.linalg.norm(self.alpha - old_alpha)
+                )
                 self.lds.append(self.LD())
                 if self.verbose:
                     print('  LD = ', self.lds[-1])
             if self.verbose:
                 print(
-                    '  Alpha update =' , self.alpha_update
+                    '  Alpha update =' , self.alpha_updates[-1]
                 )
         self.update_b()
         return self
