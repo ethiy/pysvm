@@ -14,8 +14,8 @@ def random_int_except(m, M, ex):
     )
 
 
-def random_couple(m, M):
-    return random.sample(range(m, M), k=2)
+def random_tuple(m, M, k=2):
+    return random.sample(range(m, M), k)
 
 
 class Bound(Enum):
@@ -35,21 +35,22 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
         alpha : 
     """
 
-    def __init__(self, max_iter=math.inf, kernel=lambda x, y: x.dot(y.T), C=1.0, tolerance=0, debug=False, verbose=False, epsilon=1E-15):
+    def __init__(self, max_iter=math.inf, kernel=lambda x, y: x.dot(y.T), C=1.0, tolerance=1E-3, debug=False, verbose=False, epsilon=np.finfo(float).eps):
         self.max_iter = max_iter
         self.kernel = kernel
         self.C = C
         self.tolerance = tolerance
+        self.epsilon = epsilon
         self.debug = debug
         self.verbose = verbose
 
-        self.initialize()
-
         self.b = 0
-        self.b_up, self.b_low = (0, 0)
+        self.b_up, self.b_low = (-1., 1.)
         self.i_up, self.i_low = (0, 0)
         self.L, self.H = (0, 0)
         self.delta_i, self.delta_j = (0, 0)
+
+        self.initialize()
 
         self.eta = dict()
 
@@ -58,8 +59,9 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
         self.updated = 0
         self.visit_all = True
 
-        self.error = math.inf
-        self.errors = [self.error] if self.debug else None
+        self.alpha_update = math.inf
+        self.alpha_updates = [self.alpha_update] if self.debug else None
+        self.lds = [0] if self.debug else None
 
     def initialize(self, X=[], Y=[]):
         self.n = len(X)
@@ -71,6 +73,13 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
         self.Fs = np.full(self.n, np.nan)
         self.bounded = self.n * [Bound.low]
 
+        if self.n:
+            self.i_low, self.i_up = random_tuple(0, self.n)
+            self.Fs[self.i_low] = self.b_low
+            self.Fs[self.i_up] = self.b_up
+
+        self.inner_loop_success = 1
+
         self.compute_diagonal()
     
     def compute_diagonal(self):
@@ -81,9 +90,9 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
         return bool(self.updated) or self.visit_all
 
     def bound(self, i):
-        if math.isclose(self.alpha[i], O, np.finfo(float).eps):
+        if math.isclose(self.alpha[i], 0, rel_tol=self.epsilon):
             return Bound.low
-        elif math.isclose(self.alpha[i], self.C, np.finfo(float).eps):
+        elif math.isclose(self.alpha[i], self.C, rel_tol=self.epsilon):
             return Bound.up
         else:
             return None
@@ -135,14 +144,14 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
     def clip(self, i):
         self.alpha[i] = max(self.L, min(self.H, self.alpha[i]))
 
-    # def update_b(self, sample_weight=None):
-    #     pass
+    def update_b(self):
+        self.b = (self.b_up + self.b_low) / 2.
 
-    def update_a_j(self, i, j, L, H):
+    def update_a_j(self, i, j):
         a_j_old = self.alpha[j]
         dd = self.discrepancy(i, j)
         if self.eta[(min(i, j), max(i, j))] == 0:
-            self.alpha[j] = L if dd * L < dd * H else (H if dd * L > dd * H else a_j_old)
+            self.alpha[j] = self.L if dd * self.L < dd * self.H else (self.H if dd * self.L > dd * self.H else a_j_old)
         else:
             self.alpha[j] += self.delta(dd, i, j)
             self.clip(j)
@@ -195,7 +204,7 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
 
         self.compute_eta(i, j)
         self.delta_j = self.update_a_j(i, j)
-        if math.isclose(self.delta_j, 0, self.epsilon) < 0:
+        if math.isclose(self.delta_j, 0, rel_tol=self.epsilon) < 0:
             return 0
         self.delta_i = - self.Y[j] * self.Y[i] * self.delta_j
         self.alpha[i] += self.delta_i
@@ -232,7 +241,7 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
     def check_optimality(self, j):
         if (self.is_I0(j) or self.is_I1(j) or self.is_I2(j)) and (self.b_low - self.Fs[j] > 2 * self.tolerance):
             return self.i_low
-        elif (self.is_I0(j) or self.is_I3(j) or self.is_I4(j)) and (self.Fs[j] - self.b_up > 2 * self.tolerance)
+        elif (self.is_I0(j) or self.is_I3(j) or self.is_I4(j)) and (self.Fs[j] - self.b_up > 2 * self.tolerance):
             return self.i_up
         else:
             return None
@@ -248,29 +257,74 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
             i = self.i_low if self.b_low - self.Fs[j] > self.Fs[j] - self.b_up else self.i_up
 
         return self.take_step(i, j)
+    
+    def optimal(self):
+        return self.b_up > self.b_low - 2 * self.tolerance
 
-    def fit(self, X, y, sample_weight=None):
-        self.initialize(X, y)
-        for iteration in self.train_iterations():
-            old_alpha = np.copy(self.alpha)
-            self.updated = 0
-
-            self.updated = sum(
-                [
-                    self.visit(i)
-                    for i in range(self.n)
-                    if self.visit_all or (self.bound(i) is None)
-                ]
-            )
-            self.visit_all = not self.is_continuing()
-
-            self.error = np.linalg.norm(self.alpha - prev_alpha)
-            if self.debug:
-                self.errors.append(self.error)
+    def inner_continuing(self):
+        return self.optimal() and bool(self.inner_loop_success)
+    
+    def violating_inner_iterations(self):
+        v_iter = 0
+        while self.inner_continuing():
+            v_iter += 1
+            yield v_iter
+    
+    def most_violating_steps(self):
+        for inner_iteration in self.violating_inner_iterations():
+            self.inner_loop_success = self.take_step(self.i_up, self.i_low)
+            self.updated += self.inner_loop_success
             if self.verbose:
                 print(
-                    'Iteration:', iteration,
-                    '=> Error =' , self.error
+                    '    Inner iteration:', inner_iteration
+                )
+    
+    def LD(self):
+        a = np.reshape(self.alpha, (1, -1))
+        y = np.reshape(np.array(self.Y), (1, -1))
+        return np.sum(self.alpha) - .5 * np.sum(
+            a.T.dot(a) * y.T.dot(y) * np.array(
+                [
+                    [
+                        0 if self.bounded[i] == Bound.low or self.bounded[j] == Bound.low else self.K_(i, j)
+                        for j in range(self.n)
+                    ]
+                    for i in range(self.n)
+                ]
+            )
+        )
+
+    def fit(self, X, y):
+        self.initialize(X, y)
+        for iteration in self.train_iterations():
+            print('Iteration:', iteration)
+            old_alpha = np.copy(self.alpha)
+            self.updated = 0
+            if self.visit_all:
+                print('  Visiting all...')
+                self.updated = sum(
+                    [
+                        self.visit(i)
+                        for i in range(self.n)
+                    ]
+                )
+            else:
+                print('  Visiting most violating...')
+                self.most_violating_steps()
+
+            if self.verbose:
+                print('  Updated couples: ', self.updated)
+            self.visit_all = not self.is_continuing()
+
+            self.alpha_update = np.linalg.norm(self.alpha - old_alpha)
+            if self.debug:
+                self.alpha_updates.append(self.alpha_update)
+                self.lds.append(self.LD())
+                if self.verbose:
+                    print('  LD = ', self.lds[-1])
+            if self.verbose:
+                print(
+                    '  Alpha update =' , self.alpha_update
                 )
         self.update_b()
         return self
