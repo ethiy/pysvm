@@ -35,6 +35,7 @@ class BinaryTest(unittest.TestCase):
         X, y = synthetic_separable()
         model = BinarySVM(max_iter=100, C=100)
         model.fit(X, y)
+        w = model.w()
         self.assertLessEqual(abs(w[1] / np.linalg.norm(w)), .01)
 
     
