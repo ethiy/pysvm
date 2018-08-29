@@ -301,11 +301,13 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
     def fit(self, X, y):
         self.initialize(X, y)
         for iteration in self.train_iterations():
-            print('Iteration:', iteration)
+            if self.verbose:
+                print('Iteration:', iteration)
             old_alpha = np.copy(self.alpha)
             self.updated = 0
             if self.visit_all:
-                print('  Visiting all...')
+                if self.verbose:
+                    print('  Visiting all...')
                 self.updated = sum(
                     [
                         self.visit(i)
@@ -315,7 +317,8 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
                 if self.verbose:
                     print('  Updated couples: ', self.updated)
             else:
-                print('  Visiting most violating...')
+                if self.verbose:
+                    print('  Visiting most violating...')
                 self.most_violating_steps()
 
             self.visit_all = not self.is_continuing()
