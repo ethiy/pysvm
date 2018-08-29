@@ -327,10 +327,9 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
                 self.lds.append(self.LD())
                 if self.verbose:
                     print('  LD = ', self.lds[-1])
-            if self.verbose:
-                print(
-                    '  Alpha update =' , self.alpha_updates[-1]
-                )
+                    print(
+                        '  Alpha update =' , self.alpha_updates[-1]
+                    )
         self.update_b()
         return self
     
