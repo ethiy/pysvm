@@ -375,7 +375,7 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
         if X is None or Y is None:
             X, Y = self.X, self.Y
         return np.sum(
-            np.array([self.decision_function(x) > 0 for x in X]) == np.array(Y)>0
+            np.array([self.decision_function(x) > 0 for x in X]) == (np.array(Y) > 0)
         ) / len(X)
 
 
