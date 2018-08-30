@@ -364,15 +364,18 @@ class BinarySVM(sklearn.base.BaseEstimator, sklearn.base.ClassifierMixin):
     
     def w(self):
         return np.dot(self.alpha * np.array(self.Y), np.vstack(self.X))
+    
+    def decision_function(self, x):
+        return self.phi(x) - self.b
 
     def predict(self, x):
-        return np.sign(self.phi(x) - self.b).astype(int) 
+        return np.sign(self.decision_function(x)).astype(int) 
     
     def score(self, X=None, Y=None):
         if X is None or Y is None:
             X, Y = self.X, self.Y
-        return sum(
-            [self.predict(x) == y for (x, y) in zip(X, Y)]
+        return np.sum(
+            np.array([self.decision_function(x) > 0 for x in X]) == np.array(Y>0)
         ) / len(X)
 
 
