@@ -18,11 +18,14 @@ def random_int_except(m, M, ex):
 
 
 def random_tuple(m, M, k=2):
-    return functools.reduce(
-        lambda samples, iter: samples + [random_int_except(m, M, samples)],
-        range(k),
-        []
-    )
+    if k > M - m:
+        return range(m, M)
+    else:
+        return functools.reduce(
+            lambda samples, iter: samples + [random_int_except(m, M, samples)],
+            range(k),
+            []
+        )
 
 
 def multiclass_strategy(strategy):
