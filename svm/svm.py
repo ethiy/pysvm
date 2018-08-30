@@ -19,7 +19,7 @@ def random_int_except(m, M, ex):
 
 def random_tuple(m, M, k=2):
     return functools.reduce(
-        lambda samples, iter: samples + random_int_except(m, M, samples),
+        lambda samples, iter: samples + [random_int_except(m, M, samples)],
         range(k),
         []
     )
@@ -31,7 +31,7 @@ def multiclass_strategy(strategy):
     elif strategy == 'onevsall':
         return lambda est: sklearn.multiclass.OneVsRestClassifier(est)
     else:
-        raise NotImplemented('Unkown strategy!')
+        raise NotImplementedError('Unkown strategy!')
 
 
 class Bound(Enum):
