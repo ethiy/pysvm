@@ -1,6 +1,7 @@
 from enum import Enum
 
 import math
+import functools
 import numpy as np
 import random
 
@@ -17,7 +18,11 @@ def random_int_except(m, M, ex):
 
 
 def random_tuple(m, M, k=2):
-    return random.sample(range(m, M), k)
+    return functools.reduce(
+        lambda samples, iter: samples + random_int_except(m, M, samples),
+        range(k),
+        []
+    )
 
 
 def multiclass_strategy(strategy):
