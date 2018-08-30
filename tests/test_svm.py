@@ -8,7 +8,6 @@ import unittest
 import sklearn.datasets
 import numpy as np
 
-import matplotlib.pyplot as plt
 
 def generate_guassian(mean, covar, samples):
     return [np.random.multivariate_normal(mean, covar, 1) for s in range(samples)]
